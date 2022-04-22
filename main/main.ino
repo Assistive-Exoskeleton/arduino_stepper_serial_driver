@@ -1,15 +1,18 @@
 #include "stepper_control.h"
 
+/*=========
+  INTERRUPT
+  =========*/
 #define TIMER_FREQ 10000
 #define CLOCK_FREQ 16000000
 
-#define MAX_SPEED 400 // steps/s
-
-#define START_BYTE 's'
-#define END_BYTE 'e'
-#define WHOAMI_BYTE 'd'
+/*====================
+  SERIAL COMMUNICATION
+  ====================*/
+#define HEADER 's'
+#define TAIL 'e'
+#define WHOAMI "Da"
 #define PKG_LEN 5 // ['s', command, data1, data0, 'e']
-
 #define COMMAND_SET_VELOCITY 'v'
 #define COMMAND_SET_POSITION 'p'
 #define COMMAND_WHOAMI 'w'
@@ -19,18 +22,17 @@
 #define STATE_IDLE 2
 
 
-int received[PKG_LEN] = {0};
-int state = STATE_IDLE;
+unsigned char received[PKG_LEN] = {0};
+char state = STATE_IDLE;
 
-long long int timer_p_current = 0;
-long long int timer_p_total = 0;
-long long int steps_remaining = 0;
+long timer_p_current = 0;
+long timer_p_total = 0;
+int steps = 0;
 
-StepperControl stepper_control(8,9,10,11);
+StepperControl motor(8,9,10,11);
 void setup() {
   interrupt_init();
   Serial.begin(115200);
-  Serial.println("Ready.");
 }
 
 void loop() {
@@ -39,98 +41,84 @@ void loop() {
 }
 
 ISR(TIMER1_COMPA_vect){
-
   if (state != STATE_IDLE){
     timer_p_current++;
     if (timer_p_current >= timer_p_total){
-      stepper_control.step();
-      timer_p_current = 0;
-      if (state == STATE_POSITION){
-        if (steps_remaining == 0){
-          state = STATE_IDLE;
-        }
-        else{
-          steps_remaining--;
-        }
-      }
-    }
-  }
-
-}
-
-void parse(int * received)
-{
-  if (received[1] == COMMAND_WHOAMI){
-    Serial.print("I'm: ");
-    Serial.write(WHOAMI_BYTE);
-    Serial.println();
-  }
-  else{
-    int data = 0;
-    for (int i = 2; i<PKG_LEN-1; i++){
-      data = (data << 8) | received[i];
-    }
-    Serial.print("data: ");
-    Serial.write(data);
-    Serial.println();
-    if (data == 0){
-      state = STATE_IDLE;
-    }
-    else{
-      stepper_control.set_direction(data);
-      data = abs(data);
-      switch (received[1]){
-        case (COMMAND_SET_VELOCITY):
-          if (data > MAX_SPEED)
-            data = MAX_SPEED;
-          timer_p_total = stepsFreq2TimerPeriods(data);
-          state = STATE_VELOCITY;
-          break;
-        case (COMMAND_SET_POSITION):
-          steps_remaining = data;
-          state = STATE_POSITION;
-          break;
-      }
-    }
-  }
-}
-
-void read_pkg(int * received)
-{
-  bool started = false;
-  int i = 0;
-  int rec;
-
-  while(Serial.available()>0)
-  {
-    rec = Serial.read();
-
-    if (started){
-      received[i] = rec;
-      if (i == PKG_LEN-1){
-        if (received[i] == END_BYTE){
-          parse(received);
-        }
-        started = false;
-        i = 0;
+      if (state == STATE_POSITION && motor.get_steps() == steps){
+        state = STATE_IDLE;
       }
       else{
-        i++;
+        motor.step();
+        timer_p_current = 0;
       }
     }
-
-    else if (rec == START_BYTE){
-      started = true;
-      received[0] = rec;
-      i++;
-    }
   }
+}
+
+void interrupt_update()
+{
+  timer_p_total = stepsFreq2TimerPeriods(motor.get_speed());
 }
 
 int stepsFreq2TimerPeriods (int steps_freq)
 {
   return round((double)TIMER_FREQ / (double)steps_freq); 
 }
+
+void parse(unsigned char * received)
+{
+  if (received[1] == COMMAND_WHOAMI){
+    for (int i = 2; i<PKG_LEN-1; i++){
+      received[i] = WHOAMI[i-2]; //send whoami as data of echo
+    }
+  }
+  else{
+    state = STATE_IDLE;
+    int data = 0;
+    for (int i = 2; i<PKG_LEN-1; i++){
+      data = (data << 8) | received[i];
+    }
+    //Serial.print(data);
+
+    switch(received[1])
+    {
+      case (COMMAND_SET_VELOCITY):
+        motor.set_direction(data);
+        data = abs(data);
+        motor.set_speed(data);
+        interrupt_update();
+        state = STATE_VELOCITY;
+        break;
+      case (COMMAND_SET_POSITION):
+        steps = data;
+        motor.set_position(steps);
+        state = STATE_POSITION;
+        break;
+    }
+  }
+
+  //send echo
+  Serial.write(received,PKG_LEN);
+}
+
+void read_pkg(unsigned char * received)
+{
+  int i = 0;
+  while(Serial.available()>0)
+  {
+    received[i] = Serial.read();
+    if (i > 0 || received[i] == HEADER){
+      i++;
+      if (i == PKG_LEN){
+        if (received[i-1] == TAIL){ //package OK
+          parse(received);
+        }
+        i = 0;
+      }
+    }
+  }
+}
+
 
 void interrupt_init()
 {

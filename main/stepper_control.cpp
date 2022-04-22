@@ -29,12 +29,35 @@ void StepperControl::set_direction(int d)
   if (d == 0)
     direction_ = 0;
   else
-    direction_ = d > 0 ? -1 : 1; 
+    direction_ = d > 0 ? 1 : -1; 
+}
+
+void StepperControl::set_speed(int speed)
+{
+  if (speed > MAX_SPEED){
+    speed = MAX_SPEED;
+  }
+  current_speed_ = speed;
+}
+int StepperControl::get_speed(){
+  return current_speed_;
+}
+
+void StepperControl::set_position(int pos)
+{
+  set_direction(pos - current_steps_);
+}
+
+int StepperControl::get_steps()
+{
+  return current_steps_;
 }
 
 void StepperControl::step()
 {
     digitalWrite(motor_pins_[i_on_], LOW);
-    i_on_ = (i_on_ + NUM_PINS + direction_) % NUM_PINS; //cycle in the provided direction
+    i_on_ = (i_on_ + NUM_PINS - direction_) % NUM_PINS; //cycle in the provided direction
     digitalWrite(motor_pins_[i_on_], HIGH);
+
+    current_steps_ += direction_;
 }
