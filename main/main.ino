@@ -15,6 +15,7 @@
 #define PKG_LEN 5 // ['s', command, data1, data0, 'e']
 #define COMMAND_SET_VELOCITY 'v'
 #define COMMAND_SET_POSITION 'p'
+#define COMMAND_GET_POSITION 'I'
 #define COMMAND_WHOAMI 'w'
 
 #define STATE_POSITION 0
@@ -70,6 +71,13 @@ void parse(unsigned char * received)
   if (received[1] == COMMAND_WHOAMI){
     for (int i = 2; i<PKG_LEN-1; i++){
       received[i] = WHOAMI[i-2]; //send whoami as data of echo
+    }
+  }
+  else if (received[1] == COMMAND_GET_POSITION){
+    int current_pos = motor.get_steps();
+    for (int i = PKG_LEN-2; i>=2; i--){
+      received[i] = current_pos & 0xFF;
+      current_pos >>= 8;
     }
   }
   else{
