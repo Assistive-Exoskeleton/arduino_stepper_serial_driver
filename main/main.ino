@@ -3,8 +3,9 @@
 /*=========
   INTERRUPT
   =========*/
-#define TIMER_FREQ 10000
-#define CLOCK_FREQ 16000000
+#define F_TIMER 10000
+#define T_TIMER 0.0001
+#define F_CLOCK 16000000
 
 /*====================
   SERIAL COMMUNICATION
@@ -26,8 +27,8 @@
 unsigned char received[PKG_LEN] = {0};
 char state = STATE_IDLE;
 
-long timer_p_current = 0;
-long timer_p_total = 0;
+double T_step = 0;
+double T_current = 0;
 int steps = 0;
 
 StepperControl motor(8,9,10,11);
@@ -43,14 +44,16 @@ void loop() {
 
 ISR(TIMER1_COMPA_vect){
   if (state != STATE_IDLE){
-    timer_p_current++;
-    if (timer_p_current >= timer_p_total){
-      if (state == STATE_POSITION && motor.get_steps() == steps){
-        state = STATE_IDLE;
-      }
-      else{
+    if (state == STATE_POSITION && motor.get_steps() == steps){
+      state = STATE_IDLE;
+    }
+    else
+    {
+      T_current += T_TIMER;
+      if (T_current >= T_step)
+      {
+        T_current -= T_step;
         motor.step();
-        timer_p_current = 0;
       }
     }
   }
@@ -58,12 +61,9 @@ ISR(TIMER1_COMPA_vect){
 
 void interrupt_update()
 {
-  timer_p_total = stepsFreq2TimerPeriods(motor.get_speed());
-}
-
-int stepsFreq2TimerPeriods (int steps_freq)
-{
-  return round((double)TIMER_FREQ / (double)steps_freq); 
+  T_current = 0;
+  int speed = motor.get_speed(); // != 0 before call
+  T_step = 1.0/speed; // speed = step/s = f_step
 }
 
 void parse(unsigned char * received)
@@ -91,11 +91,17 @@ void parse(unsigned char * received)
     switch(received[1])
     {
       case (COMMAND_SET_VELOCITY):
-        motor.set_direction(data);
-        data = abs(data);
-        motor.set_speed(data);
-        interrupt_update();
-        state = STATE_VELOCITY;
+        if (data!=0)
+        {
+          motor.set_direction(data);
+          data = abs(data);
+          motor.set_speed(data);
+          interrupt_update();
+          state = STATE_VELOCITY;
+        }
+        else{
+          state = STATE_IDLE;
+        }
         break;
       case (COMMAND_SET_POSITION):
         steps = data;
@@ -136,7 +142,7 @@ void interrupt_init()
   TCCR1B = 0; // same for TCCR1B
   TCNT1  = 0; // initialize counter value to 0
   // set compare match register for 1000000 Hz increments
-  OCR1A = CLOCK_FREQ/ (1*TIMER_FREQ)-1;//(must be <65536)
+  OCR1A = F_CLOCK/ (1*F_TIMER)-1;//(must be <65536)
   // turn on CTC mode
   TCCR1B |= (1 << WGM12);
   // Set CS12, CS11 and CS10 bits for 1 prescaler
