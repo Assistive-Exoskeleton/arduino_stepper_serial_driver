@@ -13,25 +13,18 @@
 #define HEADER 's'
 #define TAIL 'e'
 #define WHOAMI "Da"
-#define PKG_LEN 5 // ['s', command, data1, data0, 'e']
+#define PKG_LEN 6 // ['s', motor_ID, command, data1, data0, 'e']
 #define COMMAND_SET_VELOCITY 'v'
 #define COMMAND_SET_POSITION 'p'
 #define COMMAND_GET_POSITION 'I'
 #define COMMAND_WHOAMI 'w'
 
-#define STATE_POSITION 0
-#define STATE_VELOCITY 1
-#define STATE_IDLE 2
+#define NUM_MOTORS 2
 
 
 unsigned char received[PKG_LEN] = {0};
-char state = STATE_IDLE;
 
-double T_step = 0;
-double T_current = 0;
-int steps = 0;
-
-StepperControl motor(8,9,10,11);
+stepper_control::Stepper *motors[NUM_MOTORS] = {new stepper_control::CheapStepper(8,9,10,11), new stepper_control::NanoStepper(6,7,5)};
 void setup() {
   interrupt_init();
   Serial.begin(115200);
@@ -43,70 +36,63 @@ void loop() {
 }
 
 ISR(TIMER1_COMPA_vect){
-  if (state != STATE_IDLE){
-    if (state == STATE_POSITION && motor.get_steps() == steps){
-      state = STATE_IDLE;
-    }
-    else
-    {
-      T_current += T_TIMER;
-      if (T_current >= T_step)
-      {
-        T_current -= T_step;
-        motor.step();
+  for (int i = 0; i<NUM_MOTORS; i++){
+    if (motors[i]->state_ != STATE_IDLE){
+      if (motors[i]->state_ == STATE_POSITION && motors[i]->current_steps_ == motors[i]->target_steps_){
+        motors[i]->set_state(STATE_IDLE);
+      }
+      else{
+        motors[i]->T_current_ = motors[i]->T_current_ + T_TIMER;
+        if (motors[i]->T_current_ >= motors[i]->T_step_){
+          motors[i]->T_current_ = motors[i]->T_current_ - motors[i]->T_step_;
+          motors[i]->step();
+        }
       }
     }
   }
 }
 
-void interrupt_update()
-{
-  T_current = 0;
-  int speed = motor.get_speed(); // != 0 before call
-  T_step = 1.0/speed; // speed = step/s = f_step
-}
-
 void parse(unsigned char * received)
 {
-  if (received[1] == COMMAND_WHOAMI){
-    for (int i = 2; i<PKG_LEN-1; i++){
-      received[i] = WHOAMI[i-2]; //send whoami as data of echo
+  int id = received[1];
+  if (received[2] == COMMAND_WHOAMI){
+    for (int i = 3; i<PKG_LEN-1; i++){
+      received[i] = WHOAMI[i-3]; //send whoami as data of echo
     }
   }
-  else if (received[1] == COMMAND_GET_POSITION){
-    int current_pos = motor.get_steps();
-    for (int i = PKG_LEN-2; i>=2; i--){
+  else if (received[2] == COMMAND_GET_POSITION){
+    int current_pos = motors[id]->current_steps_;
+    for (int i = PKG_LEN-2; i>=3; i--){
       received[i] = current_pos & 0xFF;
       current_pos >>= 8;
     }
   }
   else{
-    state = STATE_IDLE;
+    motors[id]->set_state(STATE_IDLE);
     int data = 0;
-    for (int i = 2; i<PKG_LEN-1; i++){
+    for (int i = 3; i<PKG_LEN-1; i++){
       data = (data << 8) | received[i];
     }
     //Serial.print(data);
 
-    switch(received[1])
+    switch(received[2])
     {
       case (COMMAND_SET_VELOCITY):
         if (data!=0)
         {
-          motor.set_direction(data);
+          motors[id]->set_direction(data);
           data = abs(data);
-          motor.set_speed(data);
-          interrupt_update();
-          state = STATE_VELOCITY;
+          motors[id]->set_speed(data);
+          motors[id]->set_state(STATE_VELOCITY);
         }
         else{
-          state = STATE_IDLE;
+          motors[id]->set_state(STATE_IDLE);
         }
         break;
       case (COMMAND_SET_POSITION):
-        steps = data;
-        motor.set_position(steps);
-        state = STATE_POSITION;
+        motors[id]->target_steps_ = data;
+        motors[id]->set_position(motors[id]->target_steps_);
+        motors[id]->set_state(STATE_POSITION);
         break;
     }
   }
