@@ -37,18 +37,7 @@ void loop() {
 
 ISR(TIMER1_COMPA_vect){
   for (int i = 0; i<NUM_MOTORS; i++){
-    if (motors[i]->state_ != STATE_IDLE){
-      if (motors[i]->state_ == STATE_POSITION && motors[i]->current_steps_ == motors[i]->target_steps_){
-        motors[i]->set_state(STATE_IDLE);
-      }
-      else{
-        motors[i]->T_current_ = motors[i]->T_current_ + T_TIMER;
-        if (motors[i]->T_current_ >= motors[i]->T_step_){
-          motors[i]->T_current_ = motors[i]->T_current_ - motors[i]->T_step_;
-          motors[i]->step();
-        }
-      }
-    }
+    motors[i]->step_if(T_TIMER);
   }
 }
 
@@ -73,26 +62,13 @@ void parse(unsigned char * received)
     for (int i = 3; i<PKG_LEN-1; i++){
       data = (data << 8) | received[i];
     }
-    //Serial.print(data);
-
     switch(received[2])
     {
       case (COMMAND_SET_VELOCITY):
-        if (data!=0)
-        {
-          motors[id]->set_direction(data);
-          data = abs(data);
-          motors[id]->set_speed(data);
-          motors[id]->set_state(STATE_VELOCITY);
-        }
-        else{
-          motors[id]->set_state(STATE_IDLE);
-        }
+        motors[id]->set_speed(data);
         break;
       case (COMMAND_SET_POSITION):
-        motors[id]->target_steps_ = data;
-        motors[id]->set_position(motors[id]->target_steps_);
-        motors[id]->set_state(STATE_POSITION);
+        motors[id]->set_position(data);
         break;
     }
   }

@@ -8,18 +8,50 @@ namespace stepper_control
     {}
     void Stepper::set_speed(int speed)
     {
-        if (speed > max_speed_) speed = max_speed_;
-        current_speed_ = speed;
-        T_current_ = 0;
-        T_step_ = 1.0/current_speed_;
+        set_direction(speed);
+        if (speed != 0){
+            speed = abs(speed);
+            if (speed > max_speed_){
+                speed = max_speed_;
+            }
+            current_speed_ = speed;
+            T_current_ = 0;
+            T_step_ = 1.0/current_speed_;
+            set_state(STATE_VELOCITY);
+        }
+        else{
+            set_state(STATE_IDLE);
+        }
+        
     }
     void Stepper::set_position(int pos)
     {
+        target_steps_ = pos;
         set_direction(pos - current_steps_);
+        if (direction_ != 0)
+            set_state(STATE_POSITION);
+        else{
+            set_state(STATE_IDLE);
+        }
     }
     void Stepper::set_state(char state)
     {
       state_ = state;
+    }
+    
+    void Stepper::step_if(double t_timer){
+        if (state_ != STATE_IDLE){
+            if (state_ == STATE_POSITION && current_steps_ == target_steps_){
+                set_state(STATE_IDLE);
+            }
+            else{
+                T_current_ += t_timer;
+                if (T_current_ >= T_step_){
+                    T_current_ -= T_step_;
+                    step();
+                }
+            }
+        }
     }
 
     /**************** CHEAP STEPPER ****************/
