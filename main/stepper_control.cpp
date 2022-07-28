@@ -81,6 +81,15 @@ namespace stepper_control
         digitalWrite(pins_[i_on_], HIGH);
         current_steps_ += direction_;
     }
+    void CheapStepper::set_state(char state)
+    {
+        state_ = state;
+        if (state_ == STATE_IDLE){
+            for (int i = 0; i < CHEAP_PINS; i++){
+                digitalWrite(pins_[i], LOW);
+            }
+        }
+    }
 
     /**************** NANO STEPPER ****************/
     NanoStepper::NanoStepper(int pin_pul, int pin_dir, int pin_enable)

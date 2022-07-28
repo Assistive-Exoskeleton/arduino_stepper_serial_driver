@@ -39,6 +39,7 @@ class CheapStepper : public Stepper
 {
     public:
         CheapStepper(int pin0, int pin1, int pin2, int pin3);
+        void set_state(char state) override;
 
     protected:
         void step() override;
@@ -47,7 +48,7 @@ class CheapStepper : public Stepper
         int i_on_ = 0; //index of pin currently on    
 };
 
-constexpr int NANO_MAX_SPEED = 3200;
+constexpr int NANO_MAX_SPEED = 10000;
 class NanoStepper : public Stepper
 {
     public:
